@@ -1,0 +1,9 @@
+rack_model = OR-QC4422442
+rack_units = 42
+rack_height = 78.6
+rack_depth = 41.7
+rack_width = 23.62206
+rack_lip_height = 1
+rack_wall_width = .4
+rack_unit_gap = 2
+rack_point_pairs=[0,0],[24,24],[48,48],[64,64],[72,72]
