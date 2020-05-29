@@ -8,6 +8,7 @@ class MainFrame(Frame):
     # Variable Declaration
     # Data Types
     dragging=False
+    dragging_units = 1
     # TKinter widgets
     canvas=None
     treeview_node_root = None
@@ -20,6 +21,7 @@ class MainFrame(Frame):
     rack_real_height = 0
     rack_real_lip_height_top = 0
     rack_real_lip_height_bot = 0
+    rack_unit_1u_height = 0
     selected_rack_unit=None
     # Our BBOX array
     bboxes = []
@@ -32,8 +34,11 @@ class MainFrame(Frame):
     # Images
     dragging_image=None
     dragging_image_tracker=None
+    # Maps
+    dragging_image_unit_map={}
     image_map={}
     image_map_resized={}
+    rack_unit_arr=None
     #
     img=None
     device_img=None
@@ -44,7 +49,7 @@ class MainFrame(Frame):
         #
         Frame.__init__(self, master)
         self.master = master
-
+        
         #
         frame_width = 640
         frame_height = 480
@@ -109,7 +114,9 @@ class MainFrame(Frame):
 
         # Attempt to read the Rack Configuration file
         self.read_container_def_file(os.path.join(os.getcwd(), "test.cdf"))
-        
+
+        self.rack_unit_arr = [-1] * self.rack_units
+        print(self.rack_unit_arr)
         # The difference between the workspace and the contaner is that the workspace is the area used only for the
         # Rack Units and the Container describes the Real Life IDF or other Container for the Rack units
         container_wall_width = self.rack_real_wall_width * 96
@@ -156,7 +163,8 @@ class MainFrame(Frame):
             container_total_height = container_total_height * scale_factor
         
         # When describing the Rack Units always use the workspace for reference dimensions
-        rack_unit_1u_height = workspace_height / self.rack_units
+        self.rack_unit_1u_height = workspace_height / self.rack_units
+        print(f"Rack Unit 1u Height: {self.rack_unit_1u_height}")
 
         # Let us plot out some locations for the rectangles
         start_container_x = (canvas_width // 2) + (container_total_width // 2)
@@ -173,34 +181,23 @@ class MainFrame(Frame):
             
             try:
                 units = int(k.split("_")[0])
+                print(f"Total Rack Unit Height: {self.rack_unit_1u_height * units}")
+
+                # We are just spilling dictionaries out of our pockets, folks.
+                self.dragging_image_unit_map[k] = units
             except ValueError:
                 print("Failed to parse")
                 continue
 
             # Have to do this a litte weird
             img = Image.open(k)
-            img = img.resize((int(workspace_width), int(rack_unit_1u_height * units)), Image.ANTIALIAS)
+            img = img.resize((int(workspace_width), int(self.rack_unit_1u_height * units)), Image.ANTIALIAS)
 
             # Grab some variables we're going to use multiple times -_-            
             self.image_map_resized[k] = ImageTk.PhotoImage(img)
+            self.treeview_main.insert(self.treeview_node_root, 'end', text=k, values=(f"{units}"), tags=('touch'))
         
         # Create nodes based on those images
-        for k, v in self.image_map.items():
-
-            # Parse the Number of Rack units from the name
-            units = 1
-
-            try:
-                units = int(k.split("_")[0])
-            except ValueError:
-                print("FaILED!")
-
-                # If you didn't include the Rack Unit in the name then it gets skipped.
-                continue
-
-            # Scale the image to the width and height of the frame
-            branch = self.treeview_main.insert(self.treeview_node_root, 'end', text=k, values=(f"{units}"), tags=('touch'))
-
         # Pass that to the canvas to display and please make sure it's an integer.
         image_base_temp = image_base_temp.resize((int(container_total_width), int(container_total_height)), Image.ANTIALIAS)
         image_base_resized = ImageTk.PhotoImage(image_base_temp)
@@ -214,9 +211,9 @@ class MainFrame(Frame):
             # Create the bounding boxes for the Rack Units.
             box = (\
                     start_workspace_x - (workspace_width // 2),\
-                    start_workspace_y + (iter * rack_unit_1u_height),\
+                    start_workspace_y + (iter * self.rack_unit_1u_height),\
                     start_workspace_x + (workspace_width // 2),\
-                    start_workspace_y + ((iter * rack_unit_1u_height) + rack_unit_1u_height))
+                    start_workspace_y + ((iter * self.rack_unit_1u_height) + self.rack_unit_1u_height))
             rectangle = self.canvas.create_rectangle(box[0],box[1],box[2],box[3], fill = "red")
             self.bboxes.append(box)
             self.rectangles.append(rectangle)
@@ -229,42 +226,68 @@ class MainFrame(Frame):
         self.pack(fill = BOTH, expand = 1)
         self.mainloop()
 
+    def get_unit_for_bbox(self, bbox):
+        
+        if bbox == None:
+            return None
+        # That should be a number
+        item = self.canvas.find_enclosed(bbox[0]-1,bbox[1]-1,bbox[2]+1,bbox[3]+1)
+        
+        if item == None:
+            return None
+        #print(f"GUFBB: {item}")
+        out = []
+
+        for i in range(len(self.rack_unit_arr)):
+            if self.rack_unit_arr[i] in item:
+                out.append(i)
+
+        return out
+
     def clear_rack_unit(self, event):
 
+        # Get the Bounding Box at the click location
         bbox = self.get_bbox_at_position(event.x, event.y)
 
-        if not bbox == None:
+        if bbox == None:
+            return
 
-            # Find what's at this location
-            item = self.canvas.find_enclosed(bbox[0]-2,bbox[1]-2,bbox[2]+2,bbox[3]+2)
-            print(item)
-            for index in item:
-                if self.canvas.type(index)=="image":
-                    self.canvas.delete(index)
+        # Find what's at this location
+        item = self.canvas.find_overlapping(bbox[0]-2,bbox[1]-2,bbox[2]+2,bbox[3]+2)
+            
+        # Now check the list of rack units for any that match what was clicked.
+        for index in item:
+            if index in self.rack_unit_arr:
+                self.canvas.delete(index)
 
     def attempt_drop(self, event):
         
-        #
+        # If you're not holding an image then kick out
         if self.dragging_image == None or self.dragging_image_tracker == None:
             return
 
         # Find out what we're hovering over
         bbox = self.get_bbox_at_position(event.x, event.y)
-
+        
         # Is that a valid bbox?
-        if not bbox == None:
-
-            # Snap the image to the location of the bbox
-            self.canvas.coords(self.dragging_image_tracker, (bbox[0] + bbox[2]) // 2, 1 + (bbox[1] + bbox[3]) // 2)
-            
-            # Let it sit where it is; later we will append this and the base_image to an array.
-            self.dragging = False
-            self.dragging_image = None
-            self.dragging_image_tracker=None
-        else:
-
-            # Delete the hanging items
+        if bbox == None:
             self.canvas.delete(self.dragging_image_tracker)
+            return
+            
+        # This is also non-sensical and based off of no math.
+        ru = self.rack_unit_1u_height * self.dragging_units
+        print(f"RU: {ru}") 
+        # Snap the image to the location of the bbox
+        self.canvas.coords(self.dragging_image_tracker, (bbox[0] + bbox[2]) // 2, bbox[1] + ru // 2)
+            
+        # 
+        self.rack_unit_arr[self.bboxes.index(bbox)] = self.dragging_image_tracker
+        print(self.rack_unit_arr)
+           
+        # Stop Dragging the Image, Clear the reference to the dragging image.
+        self.dragging = False
+        self.dragging_image = None
+        self.dragging_image_tracker=None
 
     def _tracking_enable(self, event):
         
@@ -286,11 +309,11 @@ class MainFrame(Frame):
 
             # Grab the text
             self.dragging_image = self.image_map_resized[selected_node['text']]
-            
             if not self.dragging_image == None:
             
                 # Add that to the canvas
                 self.dragging_image_tracker = self.canvas.create_image(32, 32, image = self.dragging_image)
+                self.dragging_units = int(self.dragging_image_unit_map[selected_node['text']])
 
     def import_network_images(self, dir):
 
@@ -358,7 +381,7 @@ class MainFrame(Frame):
                 
                 # Change the selected Rack Unit.
                 return box
-                
+
     def motion(self, event):
 
         # Update the mouse position
@@ -371,6 +394,16 @@ class MainFrame(Frame):
                 self.canvas.itemconfig(rect, fill="Blue")
             elif self.canvas.itemcget(rect, "fill") == "Blue":
                 self.canvas.itemconfig(rect, fill="Red")
+        
+        #
+        #bbox = self.get_bbox_at_position(event.x, event.y)
+        #if not bbox == None:
+            #print(f"Test: {bbox}")
+            #units = self.get_unit_for_bbox(bbox)
+            #if not units == None:
+                #print(f"Test2: {units}")
+                #if not len(units) == 0:
+                    #print(f"Hovering over: {units}")
 
         # Also if you're dragging then show something to let the user know that they're carrying something
         if self.dragging:
