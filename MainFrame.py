@@ -182,17 +182,17 @@ class MainFrame(Frame):
         print(f"POST-CNTR_LIP_HGT: {cntr_hgt_lip}")
         
         # When describing the Rack Units always use the workspace for reference dimensions
-        self.rack_unit_1u_height = work_hgt / self.rack_units
-        self.rack_sample_lip_height_top = cntr_hgt_lip
-        self.rack_sample_lip_height_bot = cntr_bot_hgt_lip
+        self.rack_unit_1u_height = math.ceil(work_hgt / self.rack_units)
+        self.rack_sample_lip_height_top = math.ceil(cntr_hgt_lip)
+        self.rack_sample_lip_height_bot = math.ceil(cntr_bot_hgt_lip)
         print(f"Rack Unit 1u Height: {self.rack_unit_1u_height}")
         print(f"Rack Sample Lip Height: {self.rack_sample_lip_height_top}")
         print(f"Rack Sample Lip Height Bot: {self.rack_sample_lip_height_bot}")
         # Let us plot out some locations for the rectangles
-        cntr_stx = (cnvs_wth // 2) + (cntr_wth // 2)
-        cntr_sty = (cnvs_hgt // 2) - (cntr_hgt // 2)
-        work_stx = cntr_stx - (cntr_wth // 2)
-        work_sty = ((cnvs_hgt - cntr_hgt) // 2)
+        cntr_stx = math.ceil((cnvs_wth // 2) + (cntr_wth // 2))
+        cntr_sty = math.ceil((cnvs_hgt // 2) - (cntr_hgt // 2))
+        work_stx = math.ceil(cntr_stx - (cntr_wth // 2))
+        work_sty = math.ceil(((cnvs_hgt - cntr_hgt) // 2))
         print(f"Total Workable Height: {work_hgt}")
 
         # Create nodes based on those images
@@ -263,16 +263,20 @@ class MainFrame(Frame):
         print(f"img width: {self.base_image.width}, height: {self.base_image.height}, total: {work_hgt}")
         # Depending on the number of Rack Units possible for this Frame.
         for iter in range(self.rack_units):
-
+            x = math.ceil(work_stx - (work_wth // 2))
+            y = math.ceil((work_sty + self.rack_sample_lip_height_top) + (iter * self.rack_unit_1u_height))
+            wth = math.ceil(work_stx + (work_wth // 2))
+            hgt = math.ceil((work_sty + self.rack_sample_lip_height_top) + ((iter * self.rack_unit_1u_height) + self.rack_unit_1u_height))
             # Create the bounding boxes for the Rack Units.
             #box = (work_stx - (work_wth // 2),\
             #       work_sty + (iter * self.rack_unit_1u_height),\
             #       work_stx + (work_wth // 2),\
             #       work_sty + ((iter * self.rack_unit_1u_height) + self.rack_unit_1u_height))
-            box = (work_stx - (work_wth // 2),\
-                   (work_sty + self.rack_sample_lip_height_top) + (iter * self.rack_unit_1u_height),\
-                   work_stx + (work_wth // 2),\
-                   (work_sty + self.rack_sample_lip_height_top) + ((iter * self.rack_unit_1u_height) + self.rack_unit_1u_height))
+            box = (x,y,wth,hgt)
+            #box = (work_stx - (work_wth // 2),\
+            #       (work_sty + self.rack_sample_lip_height_top) + (iter * self.rack_unit_1u_height),\
+            #       work_stx + (work_wth // 2),\
+            #       (work_sty + self.rack_sample_lip_height_top) + ((iter * self.rack_unit_1u_height) + self.rack_unit_1u_height))
             
             # We need these rectangles for drawing.
             rectangle = self.canvas.create_rectangle(box[0],box[1],box[2],box[3], fill = "red")
@@ -305,7 +309,7 @@ class MainFrame(Frame):
             
             try:
                 units = int(k.split("_")[0])
-                print(f"Total Rack Unit Height: {self.rack_unit_1u_height * units}")
+                print(f"Total Rack Unit Height: {math.ceil(self.rack_unit_1u_height * units)}")
 
                 # We are just spilling dictionaries out of our pockets, folks.
                 self.dragging_image_unit_map[k] = units
@@ -315,7 +319,7 @@ class MainFrame(Frame):
 
             # Have to do this a litte weird
             img = Image.open(k)
-            img = img.resize((int(width), int(self.rack_unit_1u_height * units)), Image.ANTIALIAS)
+            img = img.resize((int(width), int(math.ceil(self.rack_unit_1u_height * units))), Image.ANTIALIAS)
 
             # Grab some variables we're going to use multiple times -_-            
             tup = self.test_image_map[k]
@@ -347,27 +351,30 @@ class MainFrame(Frame):
         # Not hovering over anything? Stop.
         if item == None:
             return
-
+        keys = self.rack_unit_arr.keys()
         values = self.rack_unit_arr.values()
         findex = -1
+        rs = []
 
         # Now check the list of rack units for any that match what was clicked.
         for index in item:
             
             # Does it exist in the rack unit arr
-            for itr in values:
+            for itr in keys:
 
                 # The way we setup rack_unir_arr is (fname, image_tracker, image)
-                if itr[1] == index:
+                if self.rack_unit_arr[itr][1] == index:
                     print(f"Index: {index}")
                     # Delete from the canvas
                     self.canvas.delete(index)
-
+                    rs.append(itr)
                     # Reset the index for the rack_unit_arr
-                    #self.rack_unit_arr[itr] (-1, None)
+                    #self.rack_unit_arr[itr] = (None, -1, None)
         #if findex > -1:
-            #self.rack_unit_arr[findex][0] = -1
-            #self.rack_unit_arr[findex][1] = None
+        #    self.rack_unit_arr[findex] = (None, -1, None)
+
+        for r in rs:
+            self.rack_unit_arr[r] = (None, -1, None)
 
     def _add_rack_unit(self, event):
         
@@ -492,6 +499,8 @@ class MainFrame(Frame):
         # Now we're going to take each image that was assigned to a rack unit space and paint it on this output image.
         for k, v in self.rack_unit_arr.items():
             
+            # Print the item
+            print(f"DEBUG: {k}|{v}")
             # The first element i the key for self.rack_unit_arr is a image tracking variable used by the canvas to draw images.
             if v[1] > -1:
 
@@ -513,7 +522,7 @@ class MainFrame(Frame):
                     # do that instead of this.
                     for x in range(img.width):
                         for y in range(img.height):
-                            export_data[offset_x + x, offset_y] = img.getpixel((x,y))
+                            export_data[offset_x + x, (self.rack_unit_1u_height + offset_y) + y] = img.getpixel((x,y))
         # SAVE TO FILE.
         export_image.save("Test 2.png")
 
